@@ -18,5 +18,3 @@ Nota: se asume que ya se tiene instalado Ubuntu y ROS.
 ## Ejecución
 Después de correr el .launch correspondiente a la prueba a partir de la documentación proporcionada en el repositorio: https://github.com/mnegretev/TMR-2022-AutoModelCar
 * $ rosrun nav_no_obstacles nav_no_obstacles
-
-### Créditos
