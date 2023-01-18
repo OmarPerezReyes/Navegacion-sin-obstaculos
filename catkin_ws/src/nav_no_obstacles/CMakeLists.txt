@@ -18,13 +18,11 @@ find_package(catkin REQUIRED COMPONENTS
   std_msgs
 )
 
-set(THREADS_PREFER_PTHREAD_FLAG ON)
-find_package(Threads REQUIRED)
 find_package(OpenCV 4 REQUIRED)
 
 catkin_package(
-  INCLUDE_DIRS include
-  LIBRARIES nav_no_obs
+  INCLUDE_DIRS
+  LIBRARIES nav_no_obstacles
   CATKIN_DEPENDS roscpp rospy std_msgs image_transport cv_bridge rosgraph_msgs pcl_conversions pcl_ros
 )
 
@@ -34,7 +32,7 @@ catkin_package(
 
 
 include_directories(
- include ${realsense_INCLUDE_DIR} ${catkin_INCLUDE_DIRS} ${OpenCV_INCLUDE_DIRS}  
+ include ${catkin_INCLUDE_DIRS} ${OpenCV_INCLUDE_DIRS}  
 )
 
 
@@ -51,6 +49,5 @@ include_directories(
 
 ## Add folders to be run by python nosetests
 # catkin_add_nosetests(test)
-#add_executable(dotMex_Car_Cplusplus src/glwindow.cpp src/main.cpp src/image_processing.cpp)
 add_executable(nav_no_obstacles src/main.cpp)
-target_link_libraries(nav_no_obstacles PUBLIC Threads::Threads ${catkin_LIBRARIES} ${OpenCV_LIBS})
+target_link_libraries(nav_no_obstacles ${catkin_LIBRARIES} ${OpenCV_LIBS})
