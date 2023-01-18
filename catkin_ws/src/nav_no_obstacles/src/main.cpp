@@ -11,15 +11,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <pthread.h>
+#include <signal.h>
+#include <unistd.h>
 
 #include <iostream>
 #include <chrono>
 #include <atomic>
-
-#include <signal.h>
-#include <unistd.h>
-
 
 #include <opencv2/opencv.hpp>
 #include <image_transport/image_transport.h>
@@ -40,7 +37,7 @@ ros::Publisher pubSteering;
 cv::Mat orig_image(cv::Size(640, 480), CV_8UC3);
 
 double FT = 0;
-int l = 80; //50 
+int l = 50; //80 
 int x_ref = 120;
 int x1_h = 120;
 double u = 0.0;
@@ -53,7 +50,7 @@ cv::Mat imagenFHSV1(300, 200, CV_8UC3);
 cv::Mat imagenFHSV2(300, 200, CV_8UC3); 
 cv::Mat imagenF1(300, 200, CV_8UC1);  
 cv::Mat imagenF2(300, 200, CV_8UC1);  
-cv::Mat blend(300, 200, CV_8UC1); 
+
 cv::Mat imagenFNew(300, 200, CV_8UC1); 
 cv::Mat imagenFThresh(300, 200, CV_8UC1); 
 cv::Mat imagenFSobel(300, 200, CV_8UC1); 
@@ -69,7 +66,6 @@ unsigned char get_pixel_grey(const cv::Mat &frame, int x, int y);
 
 
 int main(int argc, char **argv){
-
     // ROS initialization
    ros::init(argc, argv, "brake");
 
@@ -85,23 +81,14 @@ int main(int argc, char **argv){
     image_transport::ImageTransport it(n);
     image_transport::Subscriber sub = it.subscribe("/camera/rgb/raw", 1, imageCallback);
 
-    pubSpeed = n.advertise<std_msgs::Float64>("/speed", 10);
-    // This MUST be here
+    pubSpeed = n.advertise<std_msgs::Float64>("/speed", 15);
     rate.sleep(); 
 
-    pubSteering = n.advertise<std_msgs::Float64>("/steering", 10);
-    // This MUST be here
+    pubSteering = n.advertise<std_msgs::Float64>("/steering", 15);
     rate.sleep(); 
 
     while(ros::ok()) {
-
       ros::spinOnce();
-
-      cv::imshow("Orig", orig);
-      cv::imshow("imagenFSobel", imagenFSobel);  
-     
-      cv::waitKey(1);   
- 
    }
 
    std::cout << "Main loop is about to die " << std::endl;
@@ -111,153 +98,6 @@ int main(int argc, char **argv){
     ros::shutdown();
        
     exit(EXIT_SUCCESS);
-
-}
-
-
-//**************************************************
-void imageCallback(const sensor_msgs::ImageConstPtr& msg){
-  try
-  {
-
-    orig_image = cv_bridge::toCvShare(msg, "bgr8")->image.clone(); 
-
-    orig = orig_image.clone(); 
-    
-    // tip function in python
-    cv::warpPerspective(orig, imagenF, perspectiveMatrix, imagenF.size(), cv::INTER_LINEAR, cv::BORDER_CONSTANT);  
-    cv::cvtColor(imagenF, imagenFHSV1, cv::COLOR_BGR2HSV);
-    cv::inRange(imagenFHSV1, cv::Scalar(10, 0, 100), 
-             cv::Scalar(30, 100, 150), imagenF1);
-
-    cv::cvtColor(imagenF, imagenFHSV2, cv::COLOR_BGR2HSV);
-    cv::inRange(imagenFHSV2, cv::Scalar(0, 0, 100), 
-            cv::Scalar(179, 50, 255), imagenF2);
-
-    cv::addWeighted(imagenF1, 0.5, imagenF2, 0.5, 0.0, blend);
-    cv::GaussianBlur(blend, imagenFNew, cv::Size(9, 9), 0);
-    cv::threshold(imagenFNew, imagenFThresh, 25, 255,cv::THRESH_BINARY);
-    cv::Sobel(imagenFThresh, imagenFSobel, CV_8UC1, 1, 0, 7, 1, 0, cv::BORDER_DEFAULT); 
-
-    cv::Point pt1( 120, 0);
-    cv::Point pt2( 120, 0);
-
-    if (FT <= 0){
-       pt1.x = 180;
-       FT = FT + 1;
-    } else {
-       pt1.x = x1_h;
-    } 
-
-    //std::cout << "Prev pt1.x:" << pt1.x  << " pt1.y:" << pt1.y << " pt2.x:" << pt2.x  << " pt2.y:" << pt2.y << std::endl;
-    // std::cout.flush();      
-      
-    line_detector(imagenFSobel, l, 1, &pt1, &pt2);
-    x1_h = pt1.x;
-
-    cv::rectangle(imagenFSobel, pt1, pt2,
-              cv::Scalar(128, 128, 128),
-              cv::FILLED, 8, 0);
-
-    //cv::rectangle(imagenFSobel, cv::Rect(10, 10, 50, 50), 
-    //                   cv::Scalar(255, 255, 255), cv::FILLED, 8, 0);
-
-
-//std::cout << pt1.x << " " << pt1.y << " "  << pt2.x << " "  << pt2.y << " " ;
-
-    // std::cout << "Post pt1.x: " << pt1.x  << " pt1.y: " << pt1.y << " pt2.x: " << pt2.x  << " pt2.y: " << pt2.y  <<  std::endl;
-    // std::cout.flush(); 
-
-    // CONTROL
-    double ky = 0.02143299;
-    double kth = 0.25015021;
-
-    double e_y = pt1.x - x_ref;
-    double e_th = atan2(pt2.x - pt1.x, l);
-    u = atan(ky * e_y + kth * e_th);
-
-//    std::cout << e_y << " " << e_th  << " " << u << std::endl;
-
-    //std::cout << "e_y: " << e_y  << " e_th: " << e_th  << " u: " << u  << std::endl;
-//    std::cout.flush(); 
-
-    if (u > 0.83){ u = 0.83; }
-    if (u < -0.83){ u = -0.83; }
-    
-    std_msgs::Float64 speedMsg;  
-    speedMsg.data = (double)55.0;
-    pubSpeed.publish(speedMsg);
-
-    std_msgs::Float64 steeringMsg;
-    steeringMsg.data = u;
-    pubSteering.publish(steeringMsg);    
-       
-
-  }
-  catch (cv_bridge::Exception& e)
-  {
-    ROS_ERROR("cv_bridge exception: %s", e.what());
-  }
-}
-
-
-//**************************************************
-void line_detector(cv::Mat imagen0, int l, int side, cv::Point *pt1, cv::Point *pt2){
-
-  bool K = true;
-  int stridex = 3;
-  int stridey = 5;
-  pt1->y = roi_zone(pt1->x);
-
-  int xi = 0;
-  int xd = 0;
-  vec_create(pt1->x, stridex, side, &xi, &xd);
-   
-  while (K){
-     int m = pt1->y + stridey;
-     if (m >= 299){ m = 299;}
-     for (int j = m; j > pt1->y - stridey; j--){
-        for (int i = xi; i > xd; i--){ 
-	   if (get_pixel_grey(imagen0, i, j) == 255){
-	      pt1->x = i;
-	      pt1->y = j;
-             // std::cout << "a) pt1->x: " << pt1->x;
-             // std::cout << "a) pt1->y: " << pt1->y << std::endl;
-             // std::cout.flush();  
-	      K = false;
-	      break;
-           } 
-        }
-        xi = 0;
-        xd = 0;
-	vec_create(pt1->x, stridex, side, &xi, &xd);
-	if (K == false){ break; }
-     }
-     if (K == true){ 
-	pt1->x = pt1->x - 1 * side;
-	pt1->y = roi_zone(pt1->x);
-       // std::cout << "b) pt1->x: " << pt1->x;
-       // std::cout << "b) pt1->y: " << pt1->y << std::endl;
-     }
-
-  } // while
-
-  xi = 0;
-  xd = 0;
-  pt2->x = pt1->x;
-  vec_create(pt2->x, stridex, side, &xi, &xd);
-  for (int j = pt1->y - 1; j > pt1->y - l; j--){
-      for (int i = xi; i > xd; i--){ 
-	  if (get_pixel_grey(imagen0, i, j) == 255){
-	     pt2->x = i;
-	     pt2->y = j;
-	     K = false;
-	     break;
-          } 
-      }
-      vec_create(pt2->x, stridex, side, &xi, &xd);	
-  }  
-	
 }
 
 //***********************************
@@ -280,9 +120,9 @@ int roi_zone(int x){
       y = int(round(1.6875*x + 164.0));
    }
 
-
   return y;
 }
+
 
 //***********************************
 void vec_create(int x, int stride, int side, int *xi, int *xd){
@@ -301,6 +141,137 @@ void vec_create(int x, int stride, int side, int *xi, int *xd){
   if(*xd > 199){ *xi = 299; }
 
 }
+
+//**************************************************
+void line_detector(cv::Mat imagen0, int l, int side, cv::Point *pt1, cv::Point *pt2){
+
+  bool K = true;
+  int stridex = 3;
+  int stridey = 5;
+  pt1->y = roi_zone(pt1->x);
+
+  int xi = 0;
+  int xd = 0;
+  vec_create(pt1->x, stridex, side, &xi, &xd);
+   
+  while (K){
+     int m = pt1->y + stridey;
+     if (m >= 299){ m = 299;}
+     for (int j = m; j > pt1->y - stridey; j--){
+        for (int i = xi; i > xd; i--){ 
+	   if (get_pixel_grey(imagen0, i, j) == 255){
+	      pt1->x = i;
+	      pt1->y = j; 
+	      K = false;
+	      break;
+           } 
+        }
+        xi = 0;
+        xd = 0;
+	vec_create(pt1->x, stridex, side, &xi, &xd);
+	if (K == false){ break; }
+     }
+     if (K == true){ 
+	pt1->x = pt1->x - 1 * side;
+	pt1->y = roi_zone(pt1->x);
+     }
+
+  } // while
+
+  xi = 0;
+  xd = 0;
+  pt2->x = pt1->x;
+  vec_create(pt2->x, stridex, side, &xi, &xd);
+  for (int j = pt1->y - 1; j > pt1->y - l; j--){
+      for (int i = xi; i > xd; i--){ 
+	  if (get_pixel_grey(imagen0, i, j) == 255){
+	     pt2->x = i;
+	     pt2->y = j;
+	     K = false;
+	     break;
+          } 
+      }
+      vec_create(pt2->x, stridex, side, &xi, &xd);	
+  }  
+	
+}
+
+//**************************************************
+void imageCallback(const sensor_msgs::ImageConstPtr& msg){
+  try
+  {
+    //orig_image, original
+    orig_image = cv_bridge::toCvShare(msg, "bgr8")->image.clone(); 
+    orig = orig_image.clone(); 
+    
+    //imagenF, perspectiva, tip function in python
+    cv::warpPerspective(orig, imagenF, perspectiveMatrix, imagenF.size(), cv::INTER_LINEAR, cv::BORDER_CONSTANT);  
+    
+    //imagenF1,blanco bordes, in range(cvtcolor->colores bordes rojos)
+    cv::cvtColor(imagenF, imagenFHSV1, cv::COLOR_BGR2HSV);
+    cv::inRange(imagenFHSV1, cv::Scalar(10, 0, 100), cv::Scalar(30, 100, 150), imagenF1);
+    
+    //imagenF2, lineas dividen carril blanco,  in range(cvtcolor)
+    cv::cvtColor(imagenF, imagenFHSV2, cv::COLOR_BGR2HSV);
+    cv::inRange(imagenFHSV2, cv::Scalar(0, 0, 100), cv::Scalar(179, 50, 255), imagenF2);    
+
+    //imagenFNew, desenfoque gaussiano no idéntico al original (cambio blend por suma)
+    cv::GaussianBlur(imagenF1+imagenF2, imagenFNew, cv::Size(9, 9), 0); 
+    
+    //imagenFThresh, blanco, umbralización, agrupa pixeles en regiones mayores
+    cv::threshold(imagenFNew, imagenFThresh, 25, 255,cv::THRESH_BINARY);
+    
+    //imagenFSobel, img final, bordes
+    cv::Sobel(imagenFThresh, imagenFSobel, CV_8UC1, 1, 0, 7, 1, 0, cv::BORDER_DEFAULT); 
+    
+    //Desplegar ventana de segmentación de carriles
+    cv::imshow("imagenFSobel", imagenFSobel);
+    cv::waitKey(1);
+
+    cv::Point pt1( 120, 0);
+    cv::Point pt2( 120, 0);
+    
+    //cambio valor de 0 a 30
+    if (FT <= 30){
+       pt1.x = 180;
+       FT = FT + 1;
+    } else {
+       pt1.x = x1_h;
+    } 
+
+    line_detector(imagenFSobel, l, 1, &pt1, &pt2);
+    x1_h = pt1.x;
+
+    cv::rectangle(imagenFSobel, pt1, pt2, cv::Scalar(128, 128, 128), cv::FILLED, 8, 0);
+
+    // CONTROL
+    double ky = 0.02143299;
+    double kth = 0.25015021;
+
+    double e_y = pt1.x - x_ref;
+    // Ángulo??
+    double e_th = atan2(pt2.x - pt1.x, l);
+    u = atan(ky * e_y + kth * e_th);
+
+    if (u > 0.83){ u = 0.83; }
+    if (u < -0.83){ u = -0.83; }
+    
+    std_msgs::Float64 speedMsg;  
+    speedMsg.data = v;
+    pubSpeed.publish(speedMsg);
+
+    std_msgs::Float64 steeringMsg;
+    steeringMsg.data = u;
+    pubSteering.publish(steeringMsg);    
+       
+
+  }
+  catch (cv_bridge::Exception& e)
+  {
+    ROS_ERROR("cv_bridge exception: %s", e.what());
+  }
+}
+
 
 //**************************************************
 unsigned char get_pixel_grey(const cv::Mat &frame, int x, int y){
