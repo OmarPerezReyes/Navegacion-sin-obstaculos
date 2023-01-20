@@ -1,6 +1,5 @@
 # Navegacion sin obstáculos
 Código en C++ sobre la prueba correspondiente del proyecto dotMex_Car del Laboratorio de Robótica y Visión Artificial del Cinvestav Zacatenco, creado originalmente en lenguaje Python utilizado en el Torneo Mexicano de Robótica 2022 para la categoria AutoModelCar.
-Mtro. Oscar González Miranda.
 
 ## Requerimientos:
 * Ubuntu 18.04
